@@ -2,17 +2,31 @@
 
 CSV="usuarios.csv"
 
+# Verifica se o script está sendo executado como root
+#if [ "$EUID" -ne 0 ]; then
+#    echo "Este script precisa ser executado como root."
+#    exit 1
+#fi
+
+# Verifica se o arquivo CSV existe
+if [ ! -f "$CSV" ]; then
+    echo "Arquivo '$CSV' não encontrado."
+    exit 1
+fi
+
 # Função para selecionar usuário do CSV
 selecionar_usuario() {
-    echo "Usuários disponíveis:"
-    tail -n +2 "$CSV" | nl -w2 -s'. ' | cut -d',' -f1 --complement
-    echo
+    read -p "Digite o nome de login do usuário: " usuario
 
-    read -p "Digite o número do usuário desejado: " escolha
-    usuario=$(tail -n +2 "$CSV" | sed -n "${escolha}p" | cut -d',' -f2)
+    # Verifica se o nome existe no CSV (supondo que está na 2ª coluna)
+    if ! awk -F',' -v u="$usuario" '$2 == u {found=1} END {exit !found}' "$CSV"; then
+        echo "Usuário '$usuario' não encontrado no arquivo CSV."
+        return 1
+    fi
 
-    if [ -z "$usuario" ]; then
-        echo "Opção inválida. Tente novamente."
+    # Verifica se o usuário existe no sistema
+    if ! id "$usuario" &>/dev/null; then
+        echo "Usuário '$usuario' não existe no sistema."
         return 1
     fi
 
@@ -28,20 +42,29 @@ reset_senha() {
 
 desbloquear_usuario() {
     selecionar_usuario || return
-    usermod -U "$usuario"
-    echo "Usuário $usuario desbloqueado."
+    if usermod -U "$usuario"; then
+        echo "Usuário $usuario desbloqueado."
+    else
+        echo "Erro ao desbloquear o usuário."
+    fi
 }
 
 desativar_usuario() {
     selecionar_usuario || return
-    usermod -L "$usuario"
-    echo "Usuário $usuario desativado."
+    if usermod -L "$usuario"; then
+        echo "Usuário $usuario desativado."
+    else
+        echo "Erro ao desativar o usuário."
+    fi
 }
 
 ativar_usuario() {
     selecionar_usuario || return
-    usermod -U "$usuario"
-    echo "Usuário $usuario ativado."
+    if usermod -U "$usuario"; then
+        echo "Usuário $usuario ativado."
+    else
+        echo "Erro ao ativar o usuário."
+    fi
 }
 
 status_usuario() {
@@ -49,6 +72,7 @@ status_usuario() {
     passwd -S "$usuario"
 }
 
+# Menu principal
 menu() {
     clear
     echo "Escolha uma das opções abaixo:"
@@ -71,6 +95,7 @@ menu() {
     esac
 }
 
+# Loop principal
 while true; do
     menu
     read -p "Pressione Enter para continuar..." pausa
