@@ -18,7 +18,6 @@ fi
 selecionar_usuario() {
     read -p "Digite o nome de login do usuário: " usuario
 
-    # Verifica se o nome existe no CSV (supondo que está na 2ª coluna)
     if ! awk -F',' -v u="$usuario" '$2 == u {found=1} END {exit !found}' "$CSV"; then
         echo "Usuário '$usuario' não encontrado no arquivo CSV."
         return 1
