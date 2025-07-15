@@ -2,37 +2,29 @@
 
 CSV="usuarios.csv"
 
-# Verifica se o script está sendo executado como root
-#if [ "$EUID" -ne 0 ]; then
- #   echo "Este script precisa ser executado como root."
- #   exit 1
-#fi
+# Função para validar se o usuário que executa o script tem permissão (permissao=1 no CSV)
+validar_permissao() {
+    local user="$1"
+    permissao=$(awk -F',' -v u="$user" '$2 == u {print $5}' "$CSV")
+    if [[ "$permissao" != "1" ]]; then
+        echo -e "\e[31mUsuário '$user' não tem permissão para usar este script.\e[0m"
+        return 1
+    fi
+    return 0
+}
 
-# Verifica se o arquivo CSV existe
-if [ ! -f "$CSV" ]; then
-    echo "Arquivo '$CSV' não encontrado."
-    exit 1
-fi
-
-# Solicita o nome de usuário e senha
-read -p "Insira seu nome de usuário: " admin_user
-read -s -p "Insira sua senha: " admin_pass
-echo ""
-
-# Validação simulada
-echo "Credenciais inseridas. Verificando permissões..."
-sleep 1
-echo "Permissão concedida." 
-
-# Função para selecionar usuário
+# Função para selecionar usuário alvo da ação
 selecionar_usuario() {
-    read -p "Digite o nome de login do usuário: " usuario
+    read -p "Digite o nome de login do usuário (ex: joaosilva): " usuario
+    usuario=$(echo "$usuario" | tr '[:upper:]' '[:lower:]')  # força minúsculas
 
-    if ! grep -q ",$usuario," "$CSV"; then
+    # Verifica se usuário está no CSV
+    if ! awk -F',' -v u="$usuario" '$2 == u {found=1} END {exit !found}' "$CSV"; then
         echo -e "\e[31mUsuário '$usuario' não encontrado no arquivo CSV.\e[0m"
         return 1
     fi
 
+    # Verifica se usuário existe no sistema
     if ! id "$usuario" &>/dev/null; then
         echo -e "\e[31mUsuário '$usuario' não existe no sistema.\e[0m"
         return 1
@@ -41,39 +33,61 @@ selecionar_usuario() {
     return 0
 }
 
-# Ações
+# Gera senha com padrão: Maiúscula, especial, minúscula, minúscula, número, número
+gerar_senha_padrao() {
+    maiuscula=$(tr -dc 'A-Z' </dev/urandom | head -c 1)
+    especial=$(tr -dc '!@#$%&*' </dev/urandom | head -c 1)
+    minusculas=$(tr -dc 'a-z' </dev/urandom | head -c 2)
+    numeros=$(tr -dc '0-9' </dev/urandom | head -c 2)
+    echo "${maiuscula}${especial}${minusculas}${numeros}"
+}
+
 reset_senha() {
     selecionar_usuario || return
-    nova_senha=$(tr -dc 'A-Za-z0-9!@#$%&*' </dev/urandom | head -c 12)
+    nova_senha=$(gerar_senha_padrao)
     echo "$usuario:$nova_senha" | chpasswd
     passwd -e "$usuario"
-    echo -e "\e[32mSenha redefinida com sucesso. Nova senha: $nova_senha\e[0m"
-    echo "$nova_senha" | xclip -selection clipboard 2>/dev/null && echo "(Copiada para área de transferência)"
+    echo -e "\e[32mSenha redefinida com sucesso para '$usuario'. Nova senha: $nova_senha\e[0m"
+    echo "$nova_senha" | xclip -selection clipboard 2>/dev/null && echo "(Senha copiada para a área de transferência)"
 }
 
 desbloquear_usuario() {
     selecionar_usuario || return
-    usermod -U "$usuario" && echo -e "\e[32mUsuário $usuario desbloqueado.\e[0m"
+    usermod -U "$usuario" && echo -e "\e[32mUsuário '$usuario' desbloqueado.\e[0m"
 }
 
 desativar_usuario() {
     selecionar_usuario || return
-    usermod -L "$usuario" && echo -e "\e[32mUsuário $usuario desativado.\e[0m"
+    usermod -L "$usuario" && echo -e "\e[32mUsuário '$usuario' desativado.\e[0m"
 }
 
 ativar_usuario() {
     selecionar_usuario || return
-    usermod -U "$usuario" && echo -e "\e[32mUsuário $usuario ativado.\e[0m"
+    usermod -U "$usuario" && echo -e "\e[32mUsuário '$usuario' ativado.\e[0m"
 }
 
 status_usuario() {
     selecionar_usuario || return
     info=$(passwd -S "$usuario")
-    echo -e "\nStatus do usuário:"
+    echo -e "\nStatus do usuário '$usuario':"
     echo "$info"
 }
 
-# Menu
+# Verifica se o arquivo CSV existe
+if [ ! -f "$CSV" ]; then
+    echo "Arquivo '$CSV' não encontrado."
+    exit 1
+fi
+
+# Solicita login do admin que vai executar o script
+read -p "Insira seu nome de usuário para acesso ao script: " admin_user
+admin_user=$(echo "$admin_user" | tr '[:upper:]' '[:lower:]')
+
+validar_permissao "$admin_user" || { echo "Acesso negado."; exit 1; }
+
+echo "Permissão concedida. Bem-vindo, $admin_user!"
+
+# Loop do menu
 while true; do
     clear
     echo "===================================="
@@ -97,6 +111,7 @@ while true; do
         6) echo "Saindo..."; exit 0 ;;
         *) echo -e "\e[31mOpção inválida. Tente novamente.\e[0m" ;;
     esac
+
     echo ""
     read -p "Pressione Enter para continuar..."
 done
